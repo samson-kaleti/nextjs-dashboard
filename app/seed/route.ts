@@ -1,6 +1,6 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
+import { invoices, customers, revenue, users } from '@/app/lib/placeholder-data'
 import postgres from 'postgres';
-import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
@@ -31,7 +31,6 @@ async function seedUsers() {
 
 async function seedInvoices() {
   await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-
   await sql`
     CREATE TABLE IF NOT EXISTS invoices (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -57,7 +56,6 @@ async function seedInvoices() {
 
 async function seedCustomers() {
   await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-
   await sql`
     CREATE TABLE IF NOT EXISTS customers (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -69,7 +67,7 @@ async function seedCustomers() {
 
   const insertedCustomers = await Promise.all(
     customers.map(
-      (customer) => sql`
+      (customer: { id: string | number | boolean | Date | Uint8Array<ArrayBufferLike> | postgres.Helper<any, any[]> | postgres.Parameter<any> | postgres.ArrayParameter<readonly any[]> | readonly postgres.SerializableParameter<never>[] | postgres.Fragment | postgres.Fragment[] | null; name: string | number | boolean | Date | Uint8Array<ArrayBufferLike> | postgres.Helper<any, any[]> | postgres.Parameter<any> | postgres.ArrayParameter<readonly any[]> | readonly postgres.SerializableParameter<never>[] | postgres.Fragment | postgres.Fragment[] | null; email: string | number | boolean | Date | Uint8Array<ArrayBufferLike> | postgres.Helper<any, any[]> | postgres.Parameter<any> | postgres.ArrayParameter<readonly any[]> | readonly postgres.SerializableParameter<never>[] | postgres.Fragment | postgres.Fragment[] | null; image_url: string | number | boolean | Date | Uint8Array<ArrayBufferLike> | postgres.Helper<any, any[]> | postgres.Parameter<any> | postgres.ArrayParameter<readonly any[]> | readonly postgres.SerializableParameter<never>[] | postgres.Fragment | postgres.Fragment[] | null; }) => sql`
         INSERT INTO customers (id, name, email, image_url)
         VALUES (${customer.id}, ${customer.name}, ${customer.email}, ${customer.image_url})
         ON CONFLICT (id) DO NOTHING;
@@ -102,16 +100,29 @@ async function seedRevenue() {
 }
 
 export async function GET() {
-  try {
-    const result = await sql.begin((sql) => [
-      seedUsers(),
-      seedCustomers(),
-      seedInvoices(),
-      seedRevenue(),
-    ]);
+  if (!process.env.POSTGRES_URL) {
+    return new Response(JSON.stringify({ error: 'POSTGRES_URL is not set' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
-    return Response.json({ message: 'Database seeded successfully' });
+  try {
+    await sql.begin(async (sql) => {
+      await seedUsers();
+      await seedCustomers();
+      await seedInvoices();
+      await seedRevenue();
+    });
+    return new Response(JSON.stringify({ message: 'Database seeded successfully' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (error) {
-    return Response.json({ error }, { status: 500 });
+    console.error('Seeding failed:', error);
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
